@@ -23,10 +23,12 @@ The pipeline:
 5. Calculates provider minima, corridor cost spreads, and fee-versus-FX gap diagnostics.
 6. Publishes clean dashboard records, quality results, ranked corridors, and written findings to `public/corridor-data.json`.
 
+The implementation is split into five matching modules in [`pipeline/`](pipeline/README.md), making each stage independently readable and testable.
+
 A local workbook can be supplied for reproducible or offline runs:
 
 ```bash
-python3 scripts/prepare_data.py /path/to/rpw_dataset.xlsx
+python3 -m pipeline.run /path/to/rpw_dataset.xlsx
 ```
 
 ## Data

@@ -282,6 +282,9 @@ export default function Home() {
           <div><strong>{dataset.dataQuality.publishedOfferRecords}</strong><span>clean offer records</span></div>
           <div><strong>{dataset.analysis.corridorRankings.length}</strong><span>corridors analysed</span></div>
         </div>
+        <a className="pipeline-code-link" href="https://github.com/Yingzi-Qi/corridor-scout/tree/main/pipeline" target="_blank" rel="noreferrer">
+          View the five pipeline modules ↗
+        </a>
       </section>
 
       <section className="explorer" aria-label="Transfer comparison dashboard">
