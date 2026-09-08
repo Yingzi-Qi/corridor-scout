@@ -150,7 +150,7 @@ export default function Home() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/corridor-data.json")
+    fetch("corridor-data.json")
       .then((response) => response.json())
       .then((data: Dataset) => setDataset(data));
   }, []);

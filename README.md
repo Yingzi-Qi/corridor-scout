@@ -52,6 +52,9 @@ Requires Node.js 22.13 or newer and Python with pandas/openpyxl if regenerating 
 pnpm install
 pnpm run dev
 pnpm run build
+pnpm run build:pages
 ```
+
+The GitHub Pages build is written to `docs/` as a self-contained static site.
 
 The workbook URL and source period can also be overridden through the script options. Run `python3 scripts/prepare_data.py --help` for details.
