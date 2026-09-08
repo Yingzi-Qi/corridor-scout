@@ -5,6 +5,17 @@ from __future__ import annotations
 import re
 
 
+# INPUT DATA SOURCE
+# -----------------
+# Default: World Bank Remittance Prices Worldwide Excel workbook.
+#
+# To use another release with the SAME workbook structure, either replace
+# SOURCE_URL below or pass `--download-url <URL>` when running the pipeline.
+#
+# A completely different dataset will need a small adapter:
+# - update SHEET_NAME and REQUIRED_COLUMNS here;
+# - map its columns to the standard offer fields in step_03_clean.py.
+# Steps 04 and 05 can then be reused without changes.
 SOURCE_URL = (
     "https://datacatalogfiles.worldbank.org/ddh-published/0037898/DR0095523/"
     "rpw_dataset_2011_2025_q3.xlsx"

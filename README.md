@@ -25,6 +25,8 @@ The pipeline:
 
 The implementation is split into five matching modules in [`pipeline/`](pipeline/README.md), making each stage independently readable and testable.
 
+The input source is marked clearly in `pipeline/settings.py`. Another World Bank release with the same schema can be supplied by URL or local path. A fundamentally different dataset needs its columns mapped to the standard offer structure in Steps 02 and 03 before the existing analysis can run.
+
 A local workbook can be supplied for reproducible or offline runs:
 
 ```bash
