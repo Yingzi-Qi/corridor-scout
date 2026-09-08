@@ -248,8 +248,7 @@ export default function Home() {
           <h1>From messy workbook to decision-ready corridor analysis.</h1>
         </div>
         <p className="intro-copy">
-          A repeatable pipeline downloads, checks, cleans and analyses public pricing data,
-          then publishes the findings and an interactive comparison.
+          Messy prices in. Clear comparisons out.
         </p>
       </section>
 

@@ -163,15 +163,8 @@ def build_analysis(offers: list[dict]) -> dict:
     driver_counts = Counter(item["primaryGapDriver"] for item in rankings)
     common_driver = driver_counts.most_common(1)[0][0]
     return {
-        "question": (
-            "Across ten UK outbound corridors, which destinations had the widest gap "
-            "between providers' lowest recorded costs, and was that gap driven mainly "
-            "by fees or exchange-rate margins?"
-        ),
-        "scope": (
-            "$200-equivalent, Internet-access offers delivered within 3-5 days; "
-            "one lowest-cost qualifying service per provider and corridor."
-        ),
+        "question": "Where do transfer costs vary most—and why?",
+        "scope": "UK to 10 countries · $200 equivalent · Online · Within 3–5 days",
         "pipelineSteps": [
             "Download source workbook",
             "Validate schema and latest period",

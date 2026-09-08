@@ -2,7 +2,7 @@
 
 Corridor Scout is an automated data-to-dashboard project for comparing recorded consumer-remittance quotations. Its analytical question is:
 
-> Across ten UK outbound corridors, which destinations had the widest gap between providers' lowest recorded costs, and was that gap driven mainly by fees or exchange-rate margins?
+> Where do transfer costs vary most—and why?
 
 The fixed analysis uses $200-equivalent Internet offers delivered within 3–5 days and compares one lowest-cost qualifying service per provider and corridor. The interactive explorer then lets a user change the corridor and operating constraints. It compares service offers—not companies in the abstract—and identifies offers that are efficient on the cost–speed trade-off.
 
