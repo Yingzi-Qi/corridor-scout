@@ -1,10 +1,33 @@
 # Corridor Scout
 
-Corridor Scout is an interactive dashboard for comparing recorded consumer-remittance quotations. It answers one deliberately narrow question:
+Corridor Scout is an automated data-to-dashboard project for comparing recorded consumer-remittance quotations. Its analytical question is:
 
-> Among World Bank service offers recorded in Q3 2025, which was the lowest-cost way to send the $200- or $500-equivalent amount from the UK to a selected country, subject to funding method, receiving method, access channel, and delivery-time constraints?
+> Across ten UK outbound corridors, which destinations had the widest gap between providers' lowest recorded costs, and was that gap driven mainly by fees or exchange-rate margins?
 
-The dashboard compares service offers—not companies in the abstract. It filters the eligible quotations, minimizes the World Bank total-cost percentage, and uses faster recorded delivery as the tie-breaker. It also identifies offers that are efficient on the cost–speed trade-off.
+The fixed analysis uses $200-equivalent Internet offers delivered within 3–5 days and compares one lowest-cost qualifying service per provider and corridor. The interactive explorer then lets a user change the corridor and operating constraints. It compares service offers—not companies in the abstract—and identifies offers that are efficient on the cost–speed trade-off.
+
+## Automated pipeline
+
+One command runs the complete workflow:
+
+```bash
+pnpm run data:refresh
+```
+
+The pipeline:
+
+1. Downloads the World Bank workbook.
+2. Validates the worksheet, required columns, and newest applicable period.
+3. Filters transparent UK-origin quotations and standardises costs, methods, and speed.
+4. Checks for incomplete tiers, duplicate IDs, and unexpected speed labels.
+5. Calculates provider minima, corridor cost spreads, and fee-versus-FX gap diagnostics.
+6. Publishes clean dashboard records, quality results, ranked corridors, and written findings to `public/corridor-data.json`.
+
+A local workbook can be supplied for reproducible or offline runs:
+
+```bash
+python3 scripts/prepare_data.py /path/to/rpw_dataset.xlsx
+```
 
 ## Data
 
@@ -31,8 +54,4 @@ pnpm run dev
 pnpm run build
 ```
 
-To regenerate `public/corridor-data.json`, download the World Bank RPW workbook and run:
-
-```bash
-python scripts/prepare_data.py /path/to/rpw_dataset.xlsx
-```
+The workbook URL and source period can also be overridden through the script options. Run `python3 scripts/prepare_data.py --help` for details.

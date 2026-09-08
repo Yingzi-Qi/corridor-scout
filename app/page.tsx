@@ -39,8 +39,37 @@ type Dataset = {
     origin: string;
     scope: string;
     recordCount: number;
+    sourceRecordCount: number;
     providers: string[];
     destinations: string[];
+  };
+  dataQuality: {
+    status: string;
+    sourceRowsScanned: number;
+    eligibleSourceRows: number;
+    publishedOfferRecords: number;
+    incompleteTierRecordsDiscarded: number;
+    duplicateOfferIds: number;
+    unexpectedSpeedLabels: number;
+  };
+  analysis: {
+    question: string;
+    scope: string;
+    pipelineSteps: string[];
+    findings: string[];
+    corridorRankings: Array<{
+      destination: string;
+      providerCount: number;
+      lowestProvider: string;
+      lowestCostPct: number;
+      highestProvider: string;
+      highestCostPct: number;
+      spreadPctPoints: number;
+      spreadGbp: number;
+      feeGapPctPoints: number;
+      fxGapPctPoints: number;
+      primaryGapDriver: string;
+    }>;
   };
   offers: Offer[];
 };
@@ -192,6 +221,9 @@ export default function Home() {
     );
   }
 
+  const topCorridors = dataset.analysis.corridorRankings.slice(0, 5);
+  const maxCorridorSpread = topCorridors[0]?.spreadPctPoints ?? 1;
+
   return (
     <main>
       <header className="site-header">
@@ -213,12 +245,44 @@ export default function Home() {
       <section className="intro" id="top">
         <div>
           <p className="eyebrow">United Kingdom origin · {dataset.metadata.period}</p>
-          <h1>Which recorded transfer option cost least—and how fast was it?</h1>
+          <h1>From messy workbook to decision-ready corridor analysis.</h1>
         </div>
         <p className="intro-copy">
-          Compare transparent service quotations on the same corridor, benchmark amount and
-          delivery constraint. Rankings describe this dataset, not today’s live market.
+          A repeatable pipeline downloads, checks, cleans and analyses public pricing data,
+          then publishes the findings and an interactive comparison.
         </p>
+      </section>
+
+      <section className="pipeline-section" aria-label="Automated analysis pipeline">
+        <div className="workstream-card">
+          <div>
+            <p className="eyebrow">Workstream</p>
+            <h2>Cross-border payment competitive intelligence</h2>
+          </div>
+          <div className="quality-stamp">
+            <span>Data checks</span>
+            <strong>{dataset.dataQuality.status}</strong>
+          </div>
+        </div>
+        <div className="analysis-question">
+          <span>Analysis question</span>
+          <h2>{dataset.analysis.question}</h2>
+          <p>{dataset.analysis.scope}</p>
+        </div>
+        <div className="pipeline-flow">
+          {dataset.analysis.pipelineSteps.map((step, index) => (
+            <div key={step}>
+              <span>{String(index + 1).padStart(2, "0")}</span>
+              <p>{step}</p>
+            </div>
+          ))}
+        </div>
+        <div className="pipeline-proof">
+          <div><strong>{dataset.dataQuality.sourceRowsScanned.toLocaleString()}</strong><span>source rows scanned</span></div>
+          <div><strong>{dataset.dataQuality.eligibleSourceRows}</strong><span>eligible quotations</span></div>
+          <div><strong>{dataset.dataQuality.publishedOfferRecords}</strong><span>clean offer records</span></div>
+          <div><strong>{dataset.analysis.corridorRankings.length}</strong><span>corridors analysed</span></div>
+        </div>
       </section>
 
       <section className="explorer" aria-label="Transfer comparison dashboard">
@@ -450,6 +514,45 @@ export default function Home() {
             </div>
           )}
         </div>
+      </section>
+
+      <section className="analysis-section" aria-label="Cross-corridor findings">
+        <div className="analysis-heading">
+          <div>
+            <p className="eyebrow">Cross-corridor analysis</p>
+            <h2>Where did recorded provider costs diverge most?</h2>
+          </div>
+          <p>Fixed comparison: $200-equivalent, Internet access, delivery within 3–5 days.</p>
+        </div>
+        <div className="analysis-layout">
+          <div className="finding-list">
+            {dataset.analysis.findings.map((finding, index) => (
+              <article key={finding}>
+                <span>{String(index + 1).padStart(2, "0")}</span>
+                <p>{finding}</p>
+              </article>
+            ))}
+          </div>
+          <div className="corridor-ranking">
+            <div className="ranking-header">
+              <span>Largest provider cost spreads</span>
+              <small>percentage points</small>
+            </div>
+            {topCorridors.map((corridor) => (
+              <div className="ranking-row" key={corridor.destination}>
+                <div className="ranking-label">
+                  <strong>{corridor.destination}</strong>
+                  <small>{corridor.lowestProvider} → {corridor.highestProvider} · {corridor.primaryGapDriver}</small>
+                </div>
+                <div className="ranking-bar">
+                  <span style={{ width: `${(corridor.spreadPctPoints / maxCorridorSpread) * 100}%` }} />
+                </div>
+                <strong>{corridor.spreadPctPoints.toFixed(2)}</strong>
+              </div>
+            ))}
+          </div>
+        </div>
+        <p className="analysis-caveat">Provider minima are compared within a fixed historical scope. The fee-versus-FX classification is diagnostic and does not establish why a provider set its price.</p>
       </section>
 
       <section className="method-section">
