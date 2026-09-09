@@ -15,13 +15,15 @@ type Offer = {
   receiveMethod: string;
   speed: string;
   speedDays: number;
-  benchmarkUsd: number;
-  sendAmountGbp: number;
-  feeGbp: number;
+  benchmarkAmount: number;
+  benchmarkCurrency: string;
+  sendAmount: number;
+  sendCurrency: string;
+  feeAmount: number;
   feePct: number;
   fxMarginPct: number;
   totalCostPct: number;
-  estimatedTotalCostGbp: number;
+  estimatedTotalCost: number;
   providerFxRate: number;
   interbankFxRate: number;
   collectionDate: string;
@@ -37,25 +39,18 @@ type Dataset = {
     license: string;
     period: string;
     origin: string;
-    scope: string;
     recordCount: number;
-    sourceRecordCount: number;
     providers: string[];
     destinations: string[];
   };
-  dataQuality: {
-    status: string;
-    sourceRowsScanned: number;
-    eligibleSourceRows: number;
-    publishedOfferRecords: number;
-    incompleteTierRecordsDiscarded: number;
-    duplicateOfferIds: number;
-    unexpectedSpeedLabels: number;
-  };
   analysis: {
-    question: string;
     scope: string;
-    pipelineSteps: string[];
+    filters: {
+      benchmarkAmount: number;
+      benchmarkCurrency: string;
+      accessPoint: string;
+      maxSpeedDays: number;
+    };
     findings: string[];
     corridorRankings: Array<{
       destination: string;
@@ -65,7 +60,8 @@ type Dataset = {
       highestProvider: string;
       highestCostPct: number;
       spreadPctPoints: number;
-      spreadGbp: number;
+      spreadAmount: number;
+      sendCurrency: string;
       feeGapPctPoints: number;
       fxGapPctPoints: number;
       primaryGapDriver: string;
@@ -119,16 +115,24 @@ function driverClass(driver: string) {
   return "driver-mixed";
 }
 
-function currency(value: number) {
+function currency(value: number, currencyCode = "GBP") {
   return new Intl.NumberFormat("en-GB", {
     style: "currency",
-    currency: "GBP",
+    currency: currencyCode,
     maximumFractionDigits: 2,
   }).format(value);
 }
 
 function percent(value: number) {
   return `${value.toFixed(2)}%`;
+}
+
+function benchmarkLabel(value: number, currencyCode: string) {
+  return `${new Intl.NumberFormat("en-GB", {
+    style: "currency",
+    currency: currencyCode,
+    maximumFractionDigits: 0,
+  }).format(value)} equivalent`;
 }
 
 function bestOfferPerProvider(offers: Offer[]) {
@@ -172,13 +176,23 @@ export default function Home() {
   useEffect(() => {
     fetch("corridor-data.json")
       .then((response) => response.json())
-      .then((data: Dataset) => setDataset(data));
+      .then((data: Dataset) => {
+        setDataset(data);
+        setDestination((current) =>
+          data.metadata.destinations.includes(current)
+            ? current
+            : (data.metadata.destinations[0] ?? ""),
+        );
+        setBenchmark(data.analysis.filters.benchmarkAmount);
+        setAccess(data.analysis.filters.accessPoint);
+        setMaxSpeed(data.analysis.filters.maxSpeedDays);
+      });
   }, []);
 
   const baseOffers = useMemo(() => {
     if (!dataset) return [];
     return dataset.offers.filter(
-      (offer) => offer.destination === destination && offer.benchmarkUsd === benchmark,
+      (offer) => offer.destination === destination && offer.benchmarkAmount === benchmark,
     );
   }, [dataset, destination, benchmark]);
 
@@ -193,6 +207,15 @@ export default function Home() {
   const accessOptions = useMemo(
     () => [...new Set(baseOffers.map((offer) => offer.accessPoint))].sort(),
     [baseOffers],
+  );
+  const benchmarkOptions = useMemo(
+    () =>
+      dataset
+        ? [...new Set(dataset.offers.map((offer) => offer.benchmarkAmount))].sort(
+            (a, b) => a - b,
+          )
+        : [],
+    [dataset],
   );
 
   const qualifyingOffers = useMemo(
@@ -224,7 +247,7 @@ export default function Home() {
   const mostExpensive = rankedOffers.at(-1) ?? null;
   const spread =
     cheapest && mostExpensive
-      ? mostExpensive.estimatedTotalCostGbp - cheapest.estimatedTotalCostGbp
+      ? mostExpensive.estimatedTotalCost - cheapest.estimatedTotalCost
       : 0;
 
   const maxChartCost = Math.max(
@@ -243,23 +266,34 @@ export default function Home() {
 
   const topCorridors = dataset.analysis.corridorRankings.slice(0, 5);
   const maxCorridorSpread = topCorridors[0]?.spreadPctPoints ?? 1;
+  const fixedFilters = dataset.analysis.filters;
   const summaryRows = dataset.analysis.corridorRankings.filter(
     (corridor) => driverFilter === "All" || corridor.primaryGapDriver === driverFilter,
   );
   const lowestAcrossCorridors = [...dataset.analysis.corridorRankings].sort(
     (a, b) => a.lowestCostPct - b.lowestCostPct,
   )[0];
-  const feeLedCount = dataset.analysis.corridorRankings.filter(
-    (corridor) => corridor.primaryGapDriver === "Fee difference",
-  ).length;
+  const driverCounts = dataset.analysis.corridorRankings.reduce<Record<string, number>>(
+    (counts, corridor) => ({
+      ...counts,
+      [corridor.primaryGapDriver]: (counts[corridor.primaryGapDriver] ?? 0) + 1,
+    }),
+    {},
+  );
+  const [commonDriver, commonDriverCount] = Object.entries(driverCounts).sort(
+    (a, b) => b[1] - a[1],
+  )[0];
+  const originLabel = dataset.metadata.origin === "United Kingdom"
+    ? "UK"
+    : dataset.metadata.origin;
 
   function openCorridor(nextDestination: string) {
     setDestination(nextDestination);
-    setBenchmark(200);
+    setBenchmark(fixedFilters.benchmarkAmount);
     setFunding("All");
     setReceiving("All");
-    setAccess("Internet");
-    setMaxSpeed(5);
+    setAccess(fixedFilters.accessPoint);
+    setMaxSpeed(fixedFilters.maxSpeedDays);
     setSelectedId(null);
     window.requestAnimationFrame(() => {
       document.getElementById("corridor-explorer")?.scrollIntoView({
@@ -290,14 +324,14 @@ export default function Home() {
       <section className="intro" id="top">
         <div>
           <p className="eyebrow">Corridor analysis from raw workbook</p>
-          <h1>Where do UK remittance costs diverge—and what drives the gap?</h1>
+          <h1>Where do {originLabel} remittance costs diverge—and what drives the gap?</h1>
         </div>
         <div className="intro-copy">
           <span>Project abstract</span>
           <p>
-            Using the World Bank&apos;s {dataset.metadata.period} pricing workbook,
+            Using the {dataset.metadata.title} {dataset.metadata.period} workbook,
             Corridor Scout compares {dataset.metadata.providers.length} providers across{" "}
-            {dataset.analysis.corridorRankings.length} UK outbound corridors. It shows where
+            {dataset.analysis.corridorRankings.length} {originLabel} outbound corridors. It shows where
             providers&apos; lowest qualifying costs diverged most, which provider recorded the
             lowest cost, and whether fees or FX margins drove the difference.
           </p>
@@ -307,36 +341,6 @@ export default function Home() {
           </div>
           <p className="scope-caption">{dataset.analysis.scope}</p>
         </div>
-      </section>
-
-      <section className="pipeline-section" aria-label="Automated analysis pipeline">
-        <div className="workstream-card">
-          <div>
-            <p className="eyebrow">Workstream</p>
-            <h2>Cross-border payment competitive intelligence</h2>
-          </div>
-          <div className="quality-stamp">
-            <span>Data checks</span>
-            <strong>{dataset.dataQuality.status}</strong>
-          </div>
-        </div>
-        <div className="pipeline-flow">
-          {dataset.analysis.pipelineSteps.map((step, index) => (
-            <div key={step}>
-              <span>{String(index + 1).padStart(2, "0")}</span>
-              <p>{step}</p>
-            </div>
-          ))}
-        </div>
-        <div className="pipeline-proof">
-          <div><strong>{dataset.dataQuality.sourceRowsScanned.toLocaleString()}</strong><span>source rows scanned</span></div>
-          <div><strong>{dataset.dataQuality.eligibleSourceRows}</strong><span>eligible quotations</span></div>
-          <div><strong>{dataset.dataQuality.publishedOfferRecords}</strong><span>clean offer records</span></div>
-          <div><strong>{dataset.analysis.corridorRankings.length}</strong><span>corridors analysed</span></div>
-        </div>
-        <a className="pipeline-code-link" href="https://github.com/Yingzi-Qi/corridor-scout/tree/main/pipeline" target="_blank" rel="noreferrer">
-          View the five pipeline modules ↗
-        </a>
       </section>
 
       <section className="summary-section" aria-labelledby="workbook-answers-title">
@@ -360,12 +364,12 @@ export default function Home() {
           <article>
             <span>Lowest cost in the comparison</span>
             <strong>{lowestAcrossCorridors.lowestProvider}</strong>
-            <p>{percent(lowestAcrossCorridors.lowestCostPct)} · UK to {lowestAcrossCorridors.destination}</p>
+            <p>{percent(lowestAcrossCorridors.lowestCostPct)} · {originLabel} to {lowestAcrossCorridors.destination}</p>
           </article>
           <article>
             <span>Most common gap driver</span>
-            <strong>Fees</strong>
-            <p>{feeLedCount} of {dataset.analysis.corridorRankings.length} corridors</p>
+            <strong>{driverLabel(commonDriver)}</strong>
+            <p>{commonDriverCount} of {dataset.analysis.corridorRankings.length} corridors</p>
           </article>
         </div>
 
@@ -400,7 +404,7 @@ export default function Home() {
                 </tr>
                 <tr>
                   <th>Rank</th>
-                  <th>UK outbound corridor</th>
+                  <th>{originLabel} outbound corridor</th>
                   <th>Provider cost gap</th>
                   <th>Lowest recorded provider</th>
                   <th>Lowest cost</th>
@@ -421,14 +425,14 @@ export default function Home() {
                           className="corridor-link"
                           onClick={() => openCorridor(corridor.destination)}
                         >
-                          <strong>UK → {corridor.destination}</strong>
+                          <strong>{originLabel} → {corridor.destination}</strong>
                           <span>Open detailed comparison ↓</span>
                         </button>
                       </td>
                       <td>
                         <div className="gap-value">
                           <strong>{corridor.spreadPctPoints.toFixed(2)} pp</strong>
-                          <small>about {currency(corridor.spreadGbp)}</small>
+                          <small>about {currency(corridor.spreadAmount, corridor.sendCurrency)}</small>
                         </div>
                         <div className="summary-gap-track" aria-hidden="true">
                           <span style={{ width: `${(corridor.spreadPctPoints / maxCorridorSpread) * 100}%` }} />
@@ -461,10 +465,9 @@ export default function Home() {
       <section className="explorer" id="corridor-explorer" aria-label="Transfer comparison dashboard">
         <aside className="control-panel">
           <div className="panel-heading">
-            <span className="step-number">01</span>
             <div>
-              <h2>Set the comparison</h2>
-              <p>Origin is fixed to the UK.</p>
+              <h2>Explore an outbound corridor</h2>
+              <p>Change the conditions to inspect recorded provider quotations.</p>
             </div>
           </div>
 
@@ -480,14 +483,14 @@ export default function Home() {
           <fieldset>
             <legend>Benchmark amount</legend>
             <div className="segmented">
-              {[200, 500].map((amount) => (
+              {benchmarkOptions.map((amount) => (
                 <button
                   key={amount}
                   type="button"
                   className={benchmark === amount ? "active" : ""}
                   onClick={() => setBenchmark(amount)}
                 >
-                  ${amount} equivalent
+                  {benchmarkLabel(amount, fixedFilters.benchmarkCurrency)}
                 </button>
               ))}
             </div>
@@ -556,8 +559,8 @@ export default function Home() {
                   </p>
                 </div>
                 <div className="answer-cost">
-                  <strong>{currency(cheapest.estimatedTotalCostGbp)}</strong>
-                  <span>estimated cost on {currency(cheapest.sendAmountGbp)} sent</span>
+                  <strong>{currency(cheapest.estimatedTotalCost, cheapest.sendCurrency)}</strong>
+                  <span>estimated cost on {currency(cheapest.sendAmount, cheapest.sendCurrency)} sent</span>
                 </div>
               </div>
 
@@ -573,7 +576,7 @@ export default function Home() {
                 </div>
                 <div>
                   <span>Cost spread</span>
-                  <strong>{currency(spread)}</strong>
+                  <strong>{currency(spread, cheapest.sendCurrency)}</strong>
                   <small>cheapest to highest provider minimum</small>
                 </div>
               </div>
@@ -581,7 +584,6 @@ export default function Home() {
               <div className="chart-card">
                 <div className="section-heading">
                   <div>
-                    <span className="step-number">02</span>
                     <h2>Cost versus recorded speed</h2>
                   </div>
                   <span className="chart-note">One lowest-cost qualifying offer per provider</span>
@@ -624,7 +626,6 @@ export default function Home() {
                 <div className="comparison-table-card">
                   <div className="section-heading">
                     <div>
-                      <span className="step-number">03</span>
                       <h2>Provider comparison</h2>
                     </div>
                     <span className="chart-note">Select a row to inspect</span>
@@ -642,7 +643,7 @@ export default function Home() {
                             onClick={() => setSelectedId(offer.id)}
                           >
                             <td><span className={`provider-dot ${PROVIDER_CLASS[offer.provider] ?? ""}`} />{offer.provider}</td>
-                            <td><strong>{percent(offer.totalCostPct)}</strong><small>{currency(offer.estimatedTotalCostGbp)}</small></td>
+                            <td><strong>{percent(offer.totalCostPct)}</strong><small>{currency(offer.estimatedTotalCost, offer.sendCurrency)}</small></td>
                             <td>{offer.speed}</td>
                             <td>{offer.fundingMethod}<small>to {offer.receiveMethod}</small></td>
                             <td>{index === 0 ? <span className="lowest-tag">Lowest</span> : isParetoEfficient(offer, qualifyingOffers) ? <span className="pareto-tag">Efficient</span> : null}</td>
@@ -661,7 +662,7 @@ export default function Home() {
                       {isParetoEfficient(selected, qualifyingOffers) && <span className="pareto-tag">Cost–speed efficient</span>}
                     </div>
                     <dl>
-                      <div><dt>Transfer fee</dt><dd>{currency(selected.feeGbp)} <small>{percent(selected.feePct)}</small></dd></div>
+                      <div><dt>Transfer fee</dt><dd>{currency(selected.feeAmount, selected.sendCurrency)} <small>{percent(selected.feePct)}</small></dd></div>
                       <div><dt>FX margin</dt><dd>{percent(selected.fxMarginPct)}</dd></div>
                       <div><dt>Total cost</dt><dd>{percent(selected.totalCostPct)}</dd></div>
                       <div><dt>Recorded speed</dt><dd>{selected.speed}</dd></div>
@@ -730,8 +731,8 @@ export default function Home() {
 
       <section className="method-section">
         <div className="method-heading">
-          <p className="eyebrow">Method and limits</p>
-          <h2>A narrow answer, with the boundaries left visible.</h2>
+          <p className="eyebrow">Methodology and limitations</p>
+          <h2>How the comparison is constructed—and where it stops.</h2>
         </div>
         <div className="method-grid">
           <div>
@@ -750,7 +751,10 @@ export default function Home() {
         <div className="source-strip">
           <div><span>Source</span><strong>{dataset.metadata.title}</strong></div>
           <div><span>Coverage used</span><strong>{dataset.metadata.recordCount} quotations · {dataset.metadata.license}</strong></div>
-          <a href={dataset.metadata.methodologyUrl} target="_blank" rel="noreferrer">Read methodology ↗</a>
+          <div className="source-links">
+            <a href={dataset.metadata.methodologyUrl} target="_blank" rel="noreferrer">Source methodology ↗</a>
+            <a href="https://github.com/Yingzi-Qi/corridor-scout/tree/main/pipeline" target="_blank" rel="noreferrer">Automated pipeline ↗</a>
+          </div>
         </div>
       </section>
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 
-from .settings import DESTINATIONS
+from .contracts import AnalysisScope, validate_canonical_offers
 
 
 def best_by_provider(offers: list[dict]) -> list[dict]:
@@ -16,34 +16,48 @@ def best_by_provider(offers: list[dict]) -> list[dict]:
             offer["totalCostPct"], offer["speedDays"]
         ) < (current["totalCostPct"], current["speedDays"]):
             best[offer["provider"]] = offer
-    return sorted(best.values(), key=lambda item: (item["totalCostPct"], item["speedDays"]))
+    return sorted(
+        best.values(), key=lambda item: (item["totalCostPct"], item["speedDays"])
+    )
 
 
-def calculate_metrics(offers: list[dict]) -> dict:
+def classify_gap_driver(fee_gap: float, fx_gap: float, tolerance: float = 0.25) -> str:
+    """Classify the larger observed component without making a causal claim."""
+    if abs(abs(fee_gap) - abs(fx_gap)) < tolerance:
+        return "Mixed"
+    return "Fee difference" if abs(fee_gap) > abs(fx_gap) else "FX-margin difference"
+
+
+def money_label(amount: float, currency: str) -> str:
+    symbol = {"GBP": "£", "USD": "$", "EUR": "€"}.get(currency)
+    return f"{symbol or currency + ' '}{amount:.2f}"
+
+
+def calculate_metrics(offers: list[dict], scope: AnalysisScope | None = None) -> dict:
     """Answer the fixed cross-corridor question and write concise findings."""
+    validate_canonical_offers(offers)
+    scope = scope or AnalysisScope()
     comparable = [
         offer
         for offer in offers
-        if offer["benchmarkUsd"] == 200
-        and offer["accessPoint"] == "Internet"
-        and offer["speedDays"] <= 5
+        if offer["benchmarkAmount"] == scope.benchmark_amount
+        and offer["benchmarkCurrency"] == scope.benchmark_currency
+        and offer["accessPoint"] == scope.access_point
+        and offer["speedDays"] <= scope.max_speed_days
     ]
     rankings = []
-    for destination in sorted(DESTINATIONS):
+    for destination in sorted({offer["destination"] for offer in comparable}):
         provider_minima = best_by_provider(
             [offer for offer in comparable if offer["destination"] == destination]
         )
         if len(provider_minima) < 2:
             continue
+        currencies = {offer["sendCurrency"] for offer in provider_minima}
+        if len(currencies) != 1:
+            raise ValueError(f"Corridor {destination} mixes send currencies")
         lowest, highest = provider_minima[0], provider_minima[-1]
         fee_gap = round(highest["feePct"] - lowest["feePct"], 2)
         fx_gap = round(highest["fxMarginPct"] - lowest["fxMarginPct"], 2)
-        if abs(abs(fee_gap) - abs(fx_gap)) < 0.25:
-            driver = "Mixed"
-        elif abs(fee_gap) > abs(fx_gap):
-            driver = "Fee difference"
-        else:
-            driver = "FX-margin difference"
         rankings.append(
             {
                 "destination": destination,
@@ -53,34 +67,41 @@ def calculate_metrics(offers: list[dict]) -> dict:
                 "highestProvider": highest["provider"],
                 "highestCostPct": highest["totalCostPct"],
                 "spreadPctPoints": round(highest["totalCostPct"] - lowest["totalCostPct"], 2),
-                "spreadGbp": round(
-                    highest["estimatedTotalCostGbp"] - lowest["estimatedTotalCostGbp"], 2
+                "spreadAmount": round(
+                    highest["estimatedTotalCost"] - lowest["estimatedTotalCost"], 2
                 ),
+                "sendCurrency": lowest["sendCurrency"],
                 "feeGapPctPoints": fee_gap,
                 "fxGapPctPoints": fx_gap,
-                "primaryGapDriver": driver,
+                "primaryGapDriver": classify_gap_driver(fee_gap, fx_gap),
             }
         )
 
+    if not rankings:
+        raise ValueError("No corridors contain at least two comparable providers")
+
     rankings.sort(key=lambda item: item["spreadPctPoints"], reverse=True)
     widest, narrowest = rankings[0], rankings[-1]
-    common_driver = Counter(item["primaryGapDriver"] for item in rankings).most_common(1)[0][0]
+    common_driver = Counter(
+        item["primaryGapDriver"] for item in rankings
+    ).most_common(1)[0][0]
+    origins = {offer["origin"] for offer in comparable}
+    origin = next(iter(origins)) if len(origins) == 1 else "Multiple origins"
     return {
-        "question": "Where do transfer costs vary most—and why?",
-        "scope": "UK to 10 countries · $200 equivalent · Online · Within 3–5 days",
-        "pipelineSteps": [
-            "Download source workbook",
-            "Validate schema and latest period",
-            "Clean and standardise quotations",
-            "Calculate provider and corridor metrics",
-            "Publish dashboard data and findings",
-        ],
+        "scope": f"{origin} to {len(rankings)} countries · {scope.label()}",
+        "filters": {
+            "benchmarkAmount": scope.benchmark_amount,
+            "benchmarkCurrency": scope.benchmark_currency,
+            "accessPoint": scope.access_point,
+            "maxSpeedDays": scope.max_speed_days,
+        },
         "corridorRankings": rankings,
         "findings": [
             (
                 f"{widest['destination']} had the widest recorded provider spread: "
                 f"{widest['spreadPctPoints']:.2f} percentage points, or about "
-                f"£{widest['spreadGbp']:.2f} on the comparable send amount."
+                f"{money_label(widest['spreadAmount'], widest['sendCurrency'])} "
+                f"on the comparable send amount."
             ),
             (
                 f"{narrowest['destination']} had the narrowest recorded spread among "

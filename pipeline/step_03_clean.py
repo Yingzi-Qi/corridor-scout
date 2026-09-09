@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .contracts import validate_canonical_offers
 from .settings import DESTINATIONS, PROVIDERS, SPEED_DAYS, number, period_label
 from .step_02_validate import open_validated_sheet
 
@@ -54,13 +55,15 @@ def clean_quotations(path: Path, selected_period: str) -> tuple[list[dict], dict
                     "receiveMethod": row[column["pickup method"]],
                     "speed": speed,
                     "speedDays": SPEED_DAYS.get(speed, 99),
-                    "benchmarkUsd": number(row[column[f"{tier} denomination amount"]]),
-                    "sendAmountGbp": local_amount,
-                    "feeGbp": fee,
+                    "benchmarkAmount": number(row[column[f"{tier} denomination amount"]]),
+                    "benchmarkCurrency": "USD",
+                    "sendAmount": local_amount,
+                    "sendCurrency": "GBP",
+                    "feeAmount": fee,
                     "feePct": round(fee / local_amount * 100, 4),
                     "fxMarginPct": fx_margin_pct,
                     "totalCostPct": total_cost_pct,
-                    "estimatedTotalCostGbp": round(local_amount * total_cost_pct / 100, 2),
+                    "estimatedTotalCost": round(local_amount * total_cost_pct / 100, 2),
                     "providerFxRate": number(row[column[f"{tier} lcu fx rate"]]),
                     "interbankFxRate": number(row[column["inter lcu bank fx"]]),
                     "collectionDate": (
@@ -76,15 +79,15 @@ def clean_quotations(path: Path, selected_period: str) -> tuple[list[dict], dict
     workbook.close()
     offers.sort(
         key=lambda item: (
-            item["destination"], item["benchmarkUsd"], item["provider"], item["totalCostPct"]
+            item["destination"], item["benchmarkAmount"], item["provider"], item["totalCostPct"]
         )
     )
-    duplicate_ids = len(offers) - len({offer["id"] for offer in offers})
+    validate_canonical_offers(offers)
     cleaning_report = {
         "eligibleSourceRows": eligible_rows,
         "publishedOfferRecords": len(offers),
         "incompleteTierRecordsDiscarded": incomplete_tiers,
-        "duplicateOfferIds": duplicate_ids,
+        "duplicateOfferIds": 0,
         "unexpectedSpeedLabels": unexpected_speeds,
     }
     return offers, cleaning_report

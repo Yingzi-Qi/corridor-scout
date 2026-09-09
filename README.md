@@ -1,64 +1,62 @@
 # Corridor Scout
 
-Corridor Scout is an automated data-to-dashboard project for comparing recorded consumer-remittance quotations. Its analytical question is:
+[Live dashboard](https://yingzi-qi.github.io/corridor-scout/) · [World Bank source](https://remittanceprices.worldbank.org/data-download)
 
-> Where do transfer costs vary most—and why?
+Corridor Scout turns a public remittance-pricing workbook into a validated, interactive comparison of provider costs across UK outbound corridors.
 
-The fixed analysis uses $200-equivalent Internet offers delivered within 3–5 days and compares one lowest-cost qualifying service per provider and corridor. The interactive explorer then lets a user change the corridor and operating constraints. It compares service offers—not companies in the abstract—and identifies offers that are efficient on the cost–speed trade-off.
+## Decision question
 
-## Automated pipeline
+> Where do providers' lowest qualifying costs differ most, and is the gap driven mainly by fees or FX margins?
 
-One command runs the complete workflow:
+Fixed comparison: $200 equivalent, Internet access, delivery within 3–5 days, and one lowest-cost qualifying service per provider and corridor.
 
-```bash
-pnpm run data:refresh
-```
+## Architecture
 
-The pipeline:
-
-1. Downloads the World Bank workbook.
-2. Validates the worksheet, required columns, and newest applicable period.
-3. Filters transparent UK-origin quotations and standardises costs, methods, and speed.
-4. Checks for incomplete tiers, duplicate IDs, and unexpected speed labels.
-5. Calculates provider minima, corridor cost spreads, and fee-versus-FX gap diagnostics.
-6. Publishes clean dashboard records, quality results, ranked corridors, and written findings to `public/corridor-data.json`.
-
-The implementation is split into five matching modules in [`pipeline/`](pipeline/README.md), making each stage independently readable and testable.
-
-The input source is marked clearly in `pipeline/settings.py`. Another World Bank release with the same schema can be supplied by URL or local path. A fundamentally different dataset needs its columns mapped to the standard offer structure in Steps 02 and 03 before the existing analysis can run.
-
-A local workbook can be supplied for reproducible or offline runs:
-
-```bash
-python3 -m pipeline.run /path/to/rpw_dataset.xlsx
-```
-
-## Data
-
-The included dataset contains 394 offer-amount observations derived from 197 transparent service quotations for five providers and ten UK-origin corridors.
-
-Source attribution: The World Bank, Remittance Prices Worldwide, available at http://remittanceprices.worldbank.org
-
-- Period: 2025 Q3
-- Origin: United Kingdom
-- Providers: Wise, Remitly, WorldRemit, Western Union, and MoneyGram
-- Destinations: Bangladesh, Ghana, India, Kenya, Pakistan, Philippines, South Africa, Tanzania, Thailand, and Uganda
-- Data preparation: `scripts/prepare_data.py`
-- Dashboard data: `public/corridor-data.json`
-
-These are historical mystery-shopping quotations. They are not live prices, completed transactions, merchant payout terms, or measures of reliability.
+| Layer | Responsibility |
+|---|---|
+| `pipeline/step_01_download.py` | Download the configured workbook safely. |
+| `pipeline/step_02_validate.py` | Validate the source schema and select a period. |
+| `pipeline/step_03_clean.py` | Map World Bank rows into canonical offer records. |
+| `pipeline/contracts.py` | Define and validate the reusable offer contract. |
+| `pipeline/step_04_analyse.py` | Calculate provider minima, corridor spreads, and gap drivers. |
+| `pipeline/step_05_publish.py` | Publish deterministic dashboard JSON. |
+| `app/page.tsx` | Provide the interactive summary and detailed explorer. |
 
 ## Run locally
 
-Requires Node.js 22.13 or newer and Python with pandas/openpyxl if regenerating the data.
-
 ```bash
+python3 -m pip install -r requirements.txt
 pnpm install
+python3 -m pipeline.run /path/to/workbook.xlsx
 pnpm run dev
-pnpm run build
-pnpm run build:pages
 ```
 
-The GitHub Pages build is written to `docs/` as a self-contained static site.
+Omit the workbook path to download the configured source. Use `--period 2025_3Q` to select a specific period.
 
-The workbook URL and source period can also be overridden through the script options. Run `python3 scripts/prepare_data.py --help` for details.
+## Quality checks
+
+```bash
+pnpm run check
+```
+
+This runs the Python pipeline tests, verifies the published data, type-checks the dashboard, and creates the GitHub Pages build.
+
+## Use another dataset
+
+The analysis is reusable for another remittance-pricing dataset after a source adapter maps each row to the canonical fields in `pipeline/contracts.py`.
+
+- Same World Bank schema: pass a different workbook path or `--download-url`.
+- Different schema: replace the validation and cleaning adapter in Steps 02–03.
+- Canonical offers: reuse Steps 04–05 without changing the ranking or publishing logic.
+
+Currency amounts and codes are stored separately, so the canonical contract is not tied to GBP.
+
+## Automation
+
+GitHub Actions checks every change. A second workflow runs quarterly or on demand, refreshes the configured workbook, tests the result, rebuilds the dashboard, and publishes only when generated data changes.
+
+The scheduled job reprocesses the configured URL. Use the manual `download_url` input or update `SOURCE_URL` when a new release has a different address.
+
+## Limits
+
+The dashboard uses historical consumer-remittance quotations. It does not show live prices, completed transfers, reliability, merchant payout terms, or causal explanations for provider pricing.

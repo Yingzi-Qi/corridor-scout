@@ -3,25 +3,22 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
 from pathlib import Path
 
-from .settings import (
-    DESTINATIONS,
-    METHODOLOGY_URL,
-    PROVIDERS,
-    SOURCE_PAGE_URL,
-    period_label,
-)
+from .contracts import SourceMetadata, validate_canonical_offers
+from .settings import period_label
+
+
 def publish_dashboard_data(
     offers: list[dict],
     analysis: dict,
     validation: dict,
     cleaning_report: dict,
     output: Path,
-    source_mode: str,
+    source: SourceMetadata,
 ) -> dict:
     """Write one self-contained JSON file consumed by the dashboard."""
+    validate_canonical_offers(offers)
     duplicate_ids = cleaning_report["duplicateOfferIds"]
     unexpected_speeds = cleaning_report["unexpectedSpeedLabels"]
     quality = {
@@ -30,22 +27,22 @@ def publish_dashboard_data(
         **cleaning_report,
     }
     selected_period = validation["selectedPeriod"]
+    providers = sorted({offer["provider"] for offer in offers})
+    destinations = sorted({offer["destination"] for offer in offers})
     payload = {
         "metadata": {
-            "title": "World Bank Remittance Prices Worldwide",
-            "sourceUrl": SOURCE_PAGE_URL,
-            "methodologyUrl": METHODOLOGY_URL,
-            "license": "CC BY 4.0",
+            "title": source.title,
+            "sourceUrl": source.source_url,
+            "methodologyUrl": source.methodology_url,
+            "license": source.license,
             "period": period_label(selected_period),
             "sourcePeriodCode": selected_period,
-            "origin": "United Kingdom",
-            "scope": "Five providers across ten common UK-origin corridors",
+            "origin": offers[0]["origin"],
+            "scope": f"{len(providers)} providers across {len(destinations)} corridors",
             "recordCount": len(offers),
             "sourceRecordCount": cleaning_report["eligibleSourceRows"],
-            "providers": sorted(PROVIDERS),
-            "destinations": sorted(DESTINATIONS),
-            "pipelineRunAt": datetime.now(timezone.utc).isoformat(),
-            "sourceMode": source_mode,
+            "providers": providers,
+            "destinations": destinations,
         },
         "dataQuality": quality,
         "analysis": analysis,

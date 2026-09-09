@@ -5,7 +5,14 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from .settings import SOURCE_URL
+from .contracts import SourceMetadata
+from .settings import (
+    METHODOLOGY_URL,
+    SOURCE_LICENSE,
+    SOURCE_PAGE_URL,
+    SOURCE_TITLE,
+    SOURCE_URL,
+)
 from .step_01_download import download_source
 from .step_02_validate import validate_source
 from .step_03_clean import clean_quotations
@@ -30,8 +37,6 @@ def main() -> None:
     args = parser.parse_args()
 
     source_path = args.workbook
-    downloaded = source_path is None
-
     print("01 Download source workbook")
     if source_path is None:
         source_path = download_source(args.download_url, args.raw_cache)
@@ -54,7 +59,12 @@ def main() -> None:
         validation,
         cleaning_report,
         args.output,
-        "downloaded" if downloaded else "local workbook",
+        SourceMetadata(
+            title=SOURCE_TITLE,
+            source_url=SOURCE_PAGE_URL,
+            methodology_url=METHODOLOGY_URL,
+            license=SOURCE_LICENSE,
+        ),
     )
     print(
         f"Pipeline passed: {cleaning_report['eligibleSourceRows']} source quotations -> "
