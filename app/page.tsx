@@ -245,11 +245,20 @@ export default function Home() {
       <section className="intro" id="top">
         <div>
           <p className="eyebrow">United Kingdom origin · {dataset.metadata.period}</p>
-          <h1>From messy workbook to decision-ready corridor analysis.</h1>
+          <h1 className="question-stack">
+            <span>Which corridors show the widest provider cost gaps?</span>
+            <span>Which provider recorded the lowest qualifying cost?</span>
+            <span>Are fees or FX margins driving the difference?</span>
+          </h1>
         </div>
-        <p className="intro-copy">
-          Messy prices in. Clear comparisons out.
-        </p>
+        <div className="intro-copy">
+          <span>Decision supported</span>
+          <p>
+            Prioritise which UK outbound corridors merit closer investigation,
+            then see whether fees or FX pricing should be examined first.
+          </p>
+          <strong>Corridor analysis from raw workbook</strong>
+        </div>
       </section>
 
       <section className="pipeline-section" aria-label="Automated analysis pipeline">
