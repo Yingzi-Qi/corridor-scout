@@ -100,6 +100,25 @@ const SPEED_POSITION: Record<string, number> = {
   "6 days or more": 94,
 };
 
+const DRIVER_FILTERS = [
+  { label: "All", value: "All" },
+  { label: "FX margin", value: "FX-margin difference" },
+  { label: "Fees", value: "Fee difference" },
+  { label: "Mixed", value: "Mixed" },
+];
+
+function driverLabel(driver: string) {
+  if (driver === "FX-margin difference") return "FX margin";
+  if (driver === "Fee difference") return "Fees";
+  return "Mixed";
+}
+
+function driverClass(driver: string) {
+  if (driver === "FX-margin difference") return "driver-fx";
+  if (driver === "Fee difference") return "driver-fee";
+  return "driver-mixed";
+}
+
 function currency(value: number) {
   return new Intl.NumberFormat("en-GB", {
     style: "currency",
@@ -148,6 +167,7 @@ export default function Home() {
   const [access, setAccess] = useState("Internet");
   const [maxSpeed, setMaxSpeed] = useState(5);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [driverFilter, setDriverFilter] = useState("All");
 
   useEffect(() => {
     fetch("corridor-data.json")
@@ -223,6 +243,31 @@ export default function Home() {
 
   const topCorridors = dataset.analysis.corridorRankings.slice(0, 5);
   const maxCorridorSpread = topCorridors[0]?.spreadPctPoints ?? 1;
+  const summaryRows = dataset.analysis.corridorRankings.filter(
+    (corridor) => driverFilter === "All" || corridor.primaryGapDriver === driverFilter,
+  );
+  const lowestAcrossCorridors = [...dataset.analysis.corridorRankings].sort(
+    (a, b) => a.lowestCostPct - b.lowestCostPct,
+  )[0];
+  const feeLedCount = dataset.analysis.corridorRankings.filter(
+    (corridor) => corridor.primaryGapDriver === "Fee difference",
+  ).length;
+
+  function openCorridor(nextDestination: string) {
+    setDestination(nextDestination);
+    setBenchmark(200);
+    setFunding("All");
+    setReceiving("All");
+    setAccess("Internet");
+    setMaxSpeed(5);
+    setSelectedId(null);
+    window.requestAnimationFrame(() => {
+      document.getElementById("corridor-explorer")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+  }
 
   return (
     <main>
@@ -294,7 +339,126 @@ export default function Home() {
         </a>
       </section>
 
-      <section className="explorer" aria-label="Transfer comparison dashboard">
+      <section className="summary-section" aria-labelledby="workbook-answers-title">
+        <div className="summary-heading">
+          <div>
+            <p className="eyebrow">Answers from the workbook</p>
+            <h2 id="workbook-answers-title">All ten corridors, one clear comparison.</h2>
+          </div>
+          <p>
+            Ranked by the difference between each corridor&apos;s lowest and highest
+            provider minimum under the fixed comparison scope.
+          </p>
+        </div>
+
+        <div className="summary-cards">
+          <article>
+            <span>Widest provider gap</span>
+            <strong>{dataset.analysis.corridorRankings[0].destination}</strong>
+            <p>{dataset.analysis.corridorRankings[0].spreadPctPoints.toFixed(2)} percentage points</p>
+          </article>
+          <article>
+            <span>Lowest cost in the comparison</span>
+            <strong>{lowestAcrossCorridors.lowestProvider}</strong>
+            <p>{percent(lowestAcrossCorridors.lowestCostPct)} · UK to {lowestAcrossCorridors.destination}</p>
+          </article>
+          <article>
+            <span>Most common gap driver</span>
+            <strong>Fees</strong>
+            <p>{feeLedCount} of {dataset.analysis.corridorRankings.length} corridors</p>
+          </article>
+        </div>
+
+        <div className="summary-toolbar">
+          <div>
+            <strong>Filter by main source of the gap</strong>
+            <span>Select a corridor to open its detailed provider comparison.</span>
+          </div>
+          <div className="driver-filters" aria-label="Filter corridors by gap driver">
+            {DRIVER_FILTERS.map((filter) => (
+              <button
+                key={filter.value}
+                type="button"
+                className={driverFilter === filter.value ? "active" : ""}
+                aria-pressed={driverFilter === filter.value}
+                onClick={() => setDriverFilter(filter.value)}
+              >
+                {filter.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="summary-table-card">
+          <div className="table-wrap">
+            <table className="corridor-summary-table">
+              <thead>
+                <tr className="group-header">
+                  <th colSpan={3}>Corridor priority</th>
+                  <th colSpan={2}>Lowest qualifying offer</th>
+                  <th>Gap diagnosis</th>
+                </tr>
+                <tr>
+                  <th>Rank</th>
+                  <th>UK outbound corridor</th>
+                  <th>Provider cost gap</th>
+                  <th>Lowest recorded provider</th>
+                  <th>Lowest cost</th>
+                  <th>Main source of gap</th>
+                </tr>
+              </thead>
+              <tbody>
+                {summaryRows.map((corridor) => {
+                  const rank = dataset.analysis.corridorRankings.findIndex(
+                    (item) => item.destination === corridor.destination,
+                  ) + 1;
+                  return (
+                    <tr key={corridor.destination}>
+                      <td className="summary-rank">{String(rank).padStart(2, "0")}</td>
+                      <td>
+                        <button
+                          type="button"
+                          className="corridor-link"
+                          onClick={() => openCorridor(corridor.destination)}
+                        >
+                          <strong>UK → {corridor.destination}</strong>
+                          <span>Open detailed comparison ↓</span>
+                        </button>
+                      </td>
+                      <td>
+                        <div className="gap-value">
+                          <strong>{corridor.spreadPctPoints.toFixed(2)} pp</strong>
+                          <small>about {currency(corridor.spreadGbp)}</small>
+                        </div>
+                        <div className="summary-gap-track" aria-hidden="true">
+                          <span style={{ width: `${(corridor.spreadPctPoints / maxCorridorSpread) * 100}%` }} />
+                        </div>
+                      </td>
+                      <td>
+                        <div className="summary-provider">
+                          <span className={`provider-dot ${PROVIDER_CLASS[corridor.lowestProvider] ?? ""}`} />
+                          <strong>{corridor.lowestProvider}</strong>
+                        </div>
+                      </td>
+                      <td className="summary-lowest-cost">{percent(corridor.lowestCostPct)}</td>
+                      <td>
+                        <span className={`driver-tag ${driverClass(corridor.primaryGapDriver)}`}>
+                          {driverLabel(corridor.primaryGapDriver)}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p className="summary-footnote">
+            Fixed view: $200 equivalent · Internet access · delivery within 3–5 days · one lowest-cost qualifying service per provider and corridor.
+          </p>
+        </div>
+      </section>
+
+      <section className="explorer" id="corridor-explorer" aria-label="Transfer comparison dashboard">
         <aside className="control-panel">
           <div className="panel-heading">
             <span className="step-number">01</span>
