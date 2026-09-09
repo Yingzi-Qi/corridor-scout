@@ -244,20 +244,23 @@ export default function Home() {
 
       <section className="intro" id="top">
         <div>
-          <p className="eyebrow">United Kingdom origin · {dataset.metadata.period}</p>
-          <h1 className="question-stack">
-            <span>Which corridors show the widest provider cost gaps?</span>
-            <span>Which provider recorded the lowest qualifying cost?</span>
-            <span>Are fees or FX margins driving the difference?</span>
-          </h1>
+          <p className="eyebrow">Corridor analysis from raw workbook</p>
+          <h1>Where do UK remittance costs diverge—and what drives the gap?</h1>
         </div>
         <div className="intro-copy">
-          <span>Decision supported</span>
+          <span>Project abstract</span>
           <p>
-            Prioritise which UK outbound corridors merit closer investigation,
-            then see whether fees or FX pricing should be examined first.
+            Using the World Bank&apos;s {dataset.metadata.period} pricing workbook,
+            Corridor Scout compares {dataset.metadata.providers.length} providers across{" "}
+            {dataset.analysis.corridorRankings.length} UK outbound corridors. It shows where
+            providers&apos; lowest qualifying costs diverged most, which provider recorded the
+            lowest cost, and whether fees or FX margins drove the difference.
           </p>
-          <strong>Corridor analysis from raw workbook</strong>
+          <div className="decision-caption">
+            <strong>Decision use</strong>
+            <p>Prioritise corridors for closer pricing investigation and identify which cost component to examine first.</p>
+          </div>
+          <p className="scope-caption">{dataset.analysis.scope}</p>
         </div>
       </section>
 
@@ -271,11 +274,6 @@ export default function Home() {
             <span>Data checks</span>
             <strong>{dataset.dataQuality.status}</strong>
           </div>
-        </div>
-        <div className="analysis-question">
-          <span>Analysis question</span>
-          <h2>{dataset.analysis.question}</h2>
-          <p>{dataset.analysis.scope}</p>
         </div>
         <div className="pipeline-flow">
           {dataset.analysis.pipelineSteps.map((step, index) => (
