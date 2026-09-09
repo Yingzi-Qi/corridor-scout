@@ -303,6 +303,16 @@ export default function Home() {
     });
   }
 
+  function inspectOffer(offerId: string, revealDetails = false) {
+    setSelectedId(offerId);
+    if (!revealDetails) return;
+    window.setTimeout(() => {
+      const detailCard = document.getElementById("selected-quotation");
+      detailCard?.scrollIntoView({ behavior: "smooth", block: "center" });
+      detailCard?.focus({ preventScroll: true });
+    }, 0);
+  }
+
   return (
     <main>
       <header className="site-header">
@@ -385,13 +395,23 @@ export default function Home() {
                 type="button"
                 className={driverFilter === filter.value ? "active" : ""}
                 aria-pressed={driverFilter === filter.value}
+                title={filter.value === "Mixed" ? "Fee and FX-margin gaps are too similar for either to dominate." : undefined}
                 onClick={() => setDriverFilter(filter.value)}
               >
-                {filter.label}
+                {filter.label} ({filter.value === "All"
+                  ? dataset.analysis.corridorRankings.length
+                  : (driverCounts[filter.value] ?? 0)})
               </button>
             ))}
           </div>
         </div>
+
+        <p className="driver-explanation">
+          <strong>Mixed</strong> means the fee gap and FX-margin gap are within 0.25
+          percentage points, so neither clearly dominates. Each corridor belongs to one
+          category; a filter shows that category&apos;s subset, not zero-cost or missing-data
+          countries.
+        </p>
 
         <div className="summary-table-card">
           <div className="table-wrap">
@@ -412,10 +432,8 @@ export default function Home() {
                 </tr>
               </thead>
               <tbody>
-                {summaryRows.map((corridor) => {
-                  const rank = dataset.analysis.corridorRankings.findIndex(
-                    (item) => item.destination === corridor.destination,
-                  ) + 1;
+                {summaryRows.map((corridor, visibleIndex) => {
+                  const rank = visibleIndex + 1;
                   return (
                     <tr key={corridor.destination}>
                       <td className="summary-rank">{String(rank).padStart(2, "0")}</td>
@@ -586,7 +604,7 @@ export default function Home() {
                   <div>
                     <h2>Cost versus recorded speed</h2>
                   </div>
-                  <span className="chart-note">One lowest-cost qualifying offer per provider</span>
+                  <span className="chart-note">Select a point to open its quotation details</span>
                 </div>
                 <div className="scatter-wrap">
                   <div className="y-label">Total cost</div>
@@ -607,7 +625,8 @@ export default function Home() {
                             selected?.id === offer.id ? "selected" : ""
                           }`}
                           style={{ left: `${x}%`, bottom: `${y}%` }}
-                          onClick={() => setSelectedId(offer.id)}
+                          onClick={() => inspectOffer(offer.id, true)}
+                          aria-pressed={selected?.id === offer.id}
                           aria-label={`${offer.provider}, ${percent(offer.totalCostPct)}, ${offer.speed}`}
                         >
                           <span>{offer.provider}</span>
@@ -640,7 +659,7 @@ export default function Home() {
                           <tr
                             key={offer.id}
                             className={selected?.id === offer.id ? "selected" : ""}
-                            onClick={() => setSelectedId(offer.id)}
+                            onClick={() => inspectOffer(offer.id)}
                           >
                             <td><span className={`provider-dot ${PROVIDER_CLASS[offer.provider] ?? ""}`} />{offer.provider}</td>
                             <td><strong>{percent(offer.totalCostPct)}</strong><small>{currency(offer.estimatedTotalCost, offer.sendCurrency)}</small></td>
@@ -655,7 +674,12 @@ export default function Home() {
                 </div>
 
                 {selected && (
-                  <aside className="detail-card">
+                  <aside
+                    className="detail-card"
+                    id="selected-quotation"
+                    aria-live="polite"
+                    tabIndex={-1}
+                  >
                     <p className="eyebrow">Selected quotation</p>
                     <div className="detail-title">
                       <h2>{selected.provider}</h2>

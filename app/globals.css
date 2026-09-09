@@ -85,6 +85,8 @@ h1 { max-width: 840px; margin-bottom: 0; font-size: clamp(38px, 5vw, 68px); line
 .driver-filters button { padding: 7px 11px; border: 1px solid #bdc8c1; border-radius: 999px; background: transparent; color: var(--ink-soft); font-size: 10px; font-weight: 700; cursor: pointer; }
 .driver-filters button:hover, .driver-filters button.active { border-color: var(--green); background: var(--green); color: var(--paper); }
 .driver-filters button:focus-visible, .corridor-link:focus-visible { outline: 3px solid rgba(236,106,76,.4); outline-offset: 2px; }
+.driver-explanation { max-width: 780px; margin: 12px 0 0; color: var(--ink-soft); font-size: 10px; line-height: 1.55; }
+.driver-explanation strong { color: var(--ink); }
 .summary-table-card { margin-top: 13px; overflow: hidden; border: 1px solid var(--line); border-radius: 13px; background: #fff; }
 .corridor-summary-table { min-width: 900px; }
 .corridor-summary-table th { vertical-align: bottom; }
@@ -178,6 +180,7 @@ td small { margin-top: 2px; color: #718078; font-size: 10px; }
 .pareto-tag { background: #e8eee9; color: var(--green); }
 
 .detail-card { padding: 19px; }
+.detail-card:focus { outline: 3px solid rgba(203,243,106,.85); outline-offset: 3px; }
 .detail-card .eyebrow { margin-bottom: 5px; }
 .detail-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .detail-title h2 { margin: 0; font-size: 25px; letter-spacing: -.04em; }
