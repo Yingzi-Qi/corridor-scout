@@ -10,6 +10,17 @@ Corridor Scout turns a public remittance-pricing workbook into a validated, inte
 
 Fixed comparison: $200 equivalent, Internet access, delivery within 3–5 days, and one lowest-cost qualifying service per provider and corridor.
 
+## Reading the dashboard
+
+The overview opens with the largest provider gap, the lowest recorded cost and the most common fee/FX gap component. Its investigation prompt points to the widest historical spread and explains the checks needed before a commercial conclusion.
+
+- The overview uses a fixed $200-equivalent, Internet-access, up-to-five-day scope. Funding and receiving methods may differ; the explorer can narrow them.
+- Corridor ranks retain their overall position when the fee/FX filter is used.
+- The explorer starts at the widest-gap corridor. Reset conditions restores its default comparison; changing a destination clears incompatible method filters.
+- The fastest-service metric considers all qualifying services, while the chart and table show each provider's lowest qualifying cost.
+- The source contains 197 quotations, expanded into 394 amount observations. These are Q3 2025 records, not a live feed.
+- Quotation details expose fee, FX, date and source-row information. Chart values use the same scale as the axis, including negative recorded costs.
+
 ## Architecture
 
 | Layer | Responsibility |

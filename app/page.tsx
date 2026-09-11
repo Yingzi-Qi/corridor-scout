@@ -40,6 +40,7 @@ type Dataset = {
     period: string;
     origin: string;
     recordCount: number;
+    sourceRecordCount: number;
     providers: string[];
     destinations: string[];
   };
@@ -164,7 +165,9 @@ function isParetoEfficient(offer: Offer, offers: Offer[]) {
 
 export default function Home() {
   const [dataset, setDataset] = useState<Dataset | null>(null);
-  const [destination, setDestination] = useState("India");
+  const [destination, setDestination] = useState("");
+  const [loadError, setLoadError] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [benchmark, setBenchmark] = useState(200);
   const [funding, setFunding] = useState("All");
   const [receiving, setReceiving] = useState("All");
@@ -174,20 +177,28 @@ export default function Home() {
   const [driverFilter, setDriverFilter] = useState("All");
 
   useEffect(() => {
-    fetch("corridor-data.json")
-      .then((response) => response.json())
+    const controller = new AbortController();
+    setLoadError(false);
+    fetch("corridor-data.json", { signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error("Data unavailable");
+        return response.json();
+      })
       .then((data: Dataset) => {
+        if (!data.metadata || !data.offers?.length || !data.analysis?.corridorRankings?.length) {
+          throw new Error("Incomplete comparison data");
+        }
         setDataset(data);
-        setDestination((current) =>
-          data.metadata.destinations.includes(current)
-            ? current
-            : (data.metadata.destinations[0] ?? ""),
-        );
+        setDestination(data.analysis.corridorRankings[0].destination);
         setBenchmark(data.analysis.filters.benchmarkAmount);
         setAccess(data.analysis.filters.accessPoint);
         setMaxSpeed(data.analysis.filters.maxSpeedDays);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setLoadError(true);
       });
-  }, []);
+    return () => controller.abort();
+  }, [loadAttempt]);
 
   const baseOffers = useMemo(() => {
     if (!dataset) return [];
@@ -237,35 +248,37 @@ export default function Home() {
   const cheapest = rankedOffers[0] ?? null;
   const fastest = useMemo(
     () =>
-      [...rankedOffers].sort(
+      [...qualifyingOffers].sort(
         (a, b) => a.speedDays - b.speedDays || a.totalCostPct - b.totalCostPct,
       )[0] ?? null,
-    [rankedOffers],
+    [qualifyingOffers],
   );
   const selected =
-    rankedOffers.find((offer) => offer.id === selectedId) ?? cheapest;
+    qualifyingOffers.find((offer) => offer.id === selectedId) ?? cheapest;
   const mostExpensive = rankedOffers.at(-1) ?? null;
   const spread =
     cheapest && mostExpensive
       ? mostExpensive.estimatedTotalCost - cheapest.estimatedTotalCost
       : 0;
 
-  const maxChartCost = Math.max(
-    1,
-    ...rankedOffers.map((offer) => Math.ceil(offer.totalCostPct + 1)),
-  );
+  const minChartCost = Math.min(0, Math.floor(Math.min(...rankedOffers.map((offer) => offer.totalCostPct))));
+  const maxChartCost = Math.max(1, Math.ceil(Math.max(...rankedOffers.map((offer) => offer.totalCostPct))));
+  const chartRange = maxChartCost - minChartCost;
+
 
   if (!dataset) {
     return (
       <main className="loading-screen">
         <div className="loading-mark">CS</div>
-        <p>Preparing corridor comparison…</p>
+        <p role={loadError ? "alert" : "status"}>
+          {loadError ? "The comparison data could not be loaded." : "Preparing corridor comparison…"}
+        </p>
+        {loadError && <button className="primary-button" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>Try again</button>}
       </main>
     );
   }
 
-  const topCorridors = dataset.analysis.corridorRankings.slice(0, 5);
-  const maxCorridorSpread = topCorridors[0]?.spreadPctPoints ?? 1;
+  const maxCorridorSpread = dataset.analysis.corridorRankings[0]?.spreadPctPoints || 1;
   const fixedFilters = dataset.analysis.filters;
   const summaryRows = dataset.analysis.corridorRankings.filter(
     (corridor) => driverFilter === "All" || corridor.primaryGapDriver === driverFilter,
@@ -283,9 +296,20 @@ export default function Home() {
   const [commonDriver, commonDriverCount] = Object.entries(driverCounts).sort(
     (a, b) => b[1] - a[1],
   )[0];
+  const priority = dataset.analysis.corridorRankings[0];
+  const sourceCount = dataset.metadata.sourceRecordCount ?? new Set(dataset.offers.map((offer) => offer.sourceRowId)).size;
   const originLabel = dataset.metadata.origin === "United Kingdom"
     ? "UK"
     : dataset.metadata.origin;
+
+  function resetConditions() {
+    setBenchmark(fixedFilters.benchmarkAmount);
+    setFunding("All");
+    setReceiving("All");
+    setAccess(fixedFilters.accessPoint);
+    setMaxSpeed(fixedFilters.maxSpeedDays);
+    setSelectedId(null);
+  }
 
   function openCorridor(nextDestination: string) {
     setDestination(nextDestination);
@@ -297,7 +321,7 @@ export default function Home() {
     setSelectedId(null);
     window.requestAnimationFrame(() => {
       document.getElementById("corridor-explorer")?.scrollIntoView({
-        behavior: "smooth",
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
         block: "start",
       });
     });
@@ -308,13 +332,14 @@ export default function Home() {
     if (!revealDetails) return;
     window.setTimeout(() => {
       const detailCard = document.getElementById("selected-quotation");
-      detailCard?.scrollIntoView({ behavior: "smooth", block: "center" });
+      detailCard?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth", block: "center" });
       detailCard?.focus({ preventScroll: true });
     }, 0);
   }
 
   return (
-    <main>
+    <main id="top">
+      <a className="skip-link" href="#overview">Skip to comparison</a>
       <header className="site-header">
         <a className="brand" href="#top" aria-label="Corridor Scout home">
           <span className="brand-mark">CS</span>
@@ -324,69 +349,64 @@ export default function Home() {
           </span>
         </a>
         <div className="header-meta">
-          <span>Independent prototype</span>
+          <a href="#overview">Overview</a>
+          <a href="#corridor-explorer">Explorer</a>
+          <a href="#methodology">Method</a>
           <a href={dataset.metadata.sourceUrl} target="_blank" rel="noreferrer">
             World Bank source ↗
           </a>
         </div>
       </header>
 
-      <section className="intro" id="top">
+      <section className="intro" aria-labelledby="page-title">
         <div>
-          <p className="eyebrow">Corridor analysis from raw workbook</p>
-          <h1>Where do {originLabel} remittance costs diverge—and what drives the gap?</h1>
+          <p className="eyebrow">Historical pricing study · {dataset.metadata.period}</p>
+          <h1 id="page-title">Where do {originLabel} remittance costs differ most?</h1>
+          <p className="intro-description">Compare provider costs, isolate fee and FX differences, and decide what to investigate next.</p>
         </div>
-        <div className="intro-copy">
-          <span>Project abstract</span>
-          <p>
-            Using the {dataset.metadata.title} {dataset.metadata.period} workbook,
-            Corridor Scout compares {dataset.metadata.providers.length} providers across{" "}
-            {dataset.analysis.corridorRankings.length} {originLabel} outbound corridors. It shows where
-            providers&apos; lowest qualifying costs diverged most, which provider recorded the
-            lowest cost, and whether fees or FX margins drove the difference.
-          </p>
-          <div className="decision-caption">
-            <strong>Decision use</strong>
-            <p>Prioritise corridors for closer pricing investigation and identify which cost component to examine first.</p>
-          </div>
-          <p className="scope-caption">{dataset.analysis.scope}</p>
+        <div className="coverage-label">
+          <strong>{dataset.metadata.providers.length} providers · {dataset.analysis.corridorRankings.length} corridors</strong>
+          <span>{sourceCount} source quotations · World Bank RPW</span>
         </div>
       </section>
 
-      <section className="summary-section" aria-labelledby="workbook-answers-title">
-        <div className="summary-heading">
-          <div>
-            <p className="eyebrow">Answers from the workbook</p>
-            <h2 id="workbook-answers-title">All ten corridors, one clear comparison.</h2>
-          </div>
-          <p>
-            Ranked by the difference between each corridor&apos;s lowest and highest
-            provider minimum under the fixed comparison scope.
-          </p>
+      <section className="summary-section" id="overview" aria-label="Corridor overview">
+        <div className="overview-scope">
+          <span className="scope-tag">Fixed overview</span>
+          <p>{benchmarkLabel(fixedFilters.benchmarkAmount, fixedFilters.benchmarkCurrency)} · {fixedFilters.accessPoint === "Internet" ? "Online" : fixedFilters.accessPoint} · up to {fixedFilters.maxSpeedDays} days</p>
+          <a href="#methodology">How we compare</a>
         </div>
-
         <div className="summary-cards">
           <article>
-            <span>Widest provider gap</span>
-            <strong>{dataset.analysis.corridorRankings[0].destination}</strong>
-            <p>{dataset.analysis.corridorRankings[0].spreadPctPoints.toFixed(2)} percentage points</p>
+            <span>Largest cost gap</span>
+            <strong>{priority.spreadPctPoints.toFixed(2)} <small>pp</small></strong>
+            <p>{originLabel} → {priority.destination}</p>
           </article>
           <article>
-            <span>Lowest cost in the comparison</span>
-            <strong>{lowestAcrossCorridors.lowestProvider}</strong>
-            <p>{percent(lowestAcrossCorridors.lowestCostPct)} · {originLabel} to {lowestAcrossCorridors.destination}</p>
+            <span>Lowest recorded cost</span>
+            <strong>{percent(lowestAcrossCorridors.lowestCostPct)}</strong>
+            <p>{lowestAcrossCorridors.lowestProvider} · {lowestAcrossCorridors.destination}</p>
           </article>
           <article>
-            <span>Most common gap driver</span>
+            <span>Most common gap component</span>
             <strong>{driverLabel(commonDriver)}</strong>
             <p>{commonDriverCount} of {dataset.analysis.corridorRankings.length} corridors</p>
           </article>
         </div>
 
+        <aside className="next-step" aria-label="Suggested investigation">
+          <div>
+            <span className="eyebrow">Start the investigation</span>
+            <h2>Look first at {priority.destination}&apos;s {priority.primaryGapDriver === "FX-margin difference" ? "FX margin" : priority.primaryGapDriver === "Fee difference" ? "fee" : "combined fee and FX"} gap.</h2>
+            <p>The {priority.spreadPctPoints.toFixed(2)} pp spread is the largest in this sample. Check current quotes and match funding and receiving methods before drawing a commercial conclusion.</p>
+          </div>
+          <button type="button" className="primary-button" onClick={() => openCorridor(priority.destination)}>Inspect {priority.destination} <span aria-hidden="true">↓</span></button>
+        </aside>
+
         <div className="summary-toolbar">
           <div>
-            <strong>Filter by main source of the gap</strong>
-            <span>Select a corridor to open its detailed provider comparison.</span>
+            <h2>Corridors ranked by cost gap</h2>
+            <span>One lowest qualifying offer per provider. Select a corridor to inspect.</span>
           </div>
           <div className="driver-filters" aria-label="Filter corridors by gap driver">
             {DRIVER_FILTERS.map((filter) => (
@@ -406,24 +426,14 @@ export default function Home() {
           </div>
         </div>
 
-        <p className="driver-explanation">
-          <strong>Mixed</strong> means the fee gap and FX-margin gap are within 0.25
-          percentage points, so neither clearly dominates. Each corridor belongs to one
-          category; a filter shows that category&apos;s subset, not zero-cost or missing-data
-          countries.
-        </p>
+        <p className="driver-explanation">Gap = highest minus lowest provider minimum. <abbr title="Percentage points">pp</abbr> = percentage points. Fee and FX labels describe the larger component of that gap.</p>
 
         <div className="summary-table-card">
           <div className="table-wrap">
             <table className="corridor-summary-table">
               <thead>
-                <tr className="group-header">
-                  <th colSpan={3}>Corridor priority</th>
-                  <th colSpan={2}>Lowest qualifying offer</th>
-                  <th>Gap diagnosis</th>
-                </tr>
                 <tr>
-                  <th>Rank</th>
+                  <th>Overall rank</th>
                   <th>{originLabel} outbound corridor</th>
                   <th>Provider cost gap</th>
                   <th>Lowest recorded provider</th>
@@ -432,8 +442,8 @@ export default function Home() {
                 </tr>
               </thead>
               <tbody>
-                {summaryRows.map((corridor, visibleIndex) => {
-                  const rank = visibleIndex + 1;
+                {summaryRows.map((corridor) => {
+                  const rank = dataset.analysis.corridorRankings.findIndex((item) => item.destination === corridor.destination) + 1;
                   return (
                     <tr key={corridor.destination}>
                       <td className="summary-rank">{String(rank).padStart(2, "0")}</td>
@@ -444,7 +454,7 @@ export default function Home() {
                           onClick={() => openCorridor(corridor.destination)}
                         >
                           <strong>{originLabel} → {corridor.destination}</strong>
-                          <span>Open detailed comparison ↓</span>
+                          <span>Inspect offers →</span>
                         </button>
                       </td>
                       <td>
@@ -475,7 +485,7 @@ export default function Home() {
             </table>
           </div>
           <p className="summary-footnote">
-            Fixed view: $200 equivalent · Internet access · delivery within 3–5 days · one lowest-cost qualifying service per provider and corridor.
+            Funding and receiving methods may differ. “Mixed” means the absolute fee and FX gaps differ by less than 0.25 pp. Rankings stay fixed when you change the explorer below.
           </p>
         </div>
       </section>
@@ -484,14 +494,14 @@ export default function Home() {
         <aside className="control-panel">
           <div className="panel-heading">
             <div>
-              <h2>Explore an outbound corridor</h2>
-              <p>Change the conditions to inspect recorded provider quotations.</p>
+              <h2>Explore a corridor</h2>
+              <p>Adjust the conditions for this comparison.</p>
             </div>
           </div>
 
           <label>
             Destination
-            <select value={destination} onChange={(event) => setDestination(event.target.value)}>
+            <select value={destination} onChange={(event) => { setDestination(event.target.value); resetConditions(); }}>
               {dataset.metadata.destinations.map((option) => (
                 <option key={option}>{option}</option>
               ))}
@@ -506,7 +516,8 @@ export default function Home() {
                   key={amount}
                   type="button"
                   className={benchmark === amount ? "active" : ""}
-                  onClick={() => setBenchmark(amount)}
+                  aria-pressed={benchmark === amount}
+                  onClick={() => { setBenchmark(amount); setFunding("All"); setReceiving("All"); setAccess(fixedFilters.accessPoint); setSelectedId(null); }}
                 >
                   {benchmarkLabel(amount, fixedFilters.benchmarkCurrency)}
                 </button>
@@ -558,13 +569,19 @@ export default function Home() {
             </select>
           </label>
 
-          <div className="scope-note">
+          <button type="button" className="reset-button" onClick={resetConditions}>Reset conditions</button>
+          <div className="scope-note" aria-live="polite">
             <span>{qualifyingOffers.length}</span>
             qualifying service quotations remain after these filters.
           </div>
         </aside>
 
         <div className="results-panel">
+          <div className="explorer-heading">
+            <div><p className="eyebrow">Adjustable comparison · {dataset.metadata.period}</p><h2>{originLabel} → {destination}</h2></div>
+            <span className="scope-tag">{benchmarkLabel(benchmark, fixedFilters.benchmarkCurrency)}</span>
+          </div>
+          <p className="comparison-context">{funding === "All" || receiving === "All" ? "Funding or receiving methods can differ. Choose specific methods to narrow the comparison." : `${funding} → ${receiving}. Provider prices still reflect historical quotations.`}</p>
           {cheapest ? (
             <>
               <div className="answer-banner">
@@ -588,14 +605,14 @@ export default function Home() {
                   <strong>{rankedOffers.length}</strong>
                 </div>
                 <div>
-                  <span>Fastest recorded option</span>
+                  <span>Fastest qualifying service</span>
                   <strong>{fastest?.speed}</strong>
                   <small>{fastest?.provider}</small>
                 </div>
                 <div>
                   <span>Cost spread</span>
-                  <strong>{currency(spread, cheapest.sendCurrency)}</strong>
-                  <small>cheapest to highest provider minimum</small>
+                  <strong>{rankedOffers.length > 1 ? currency(spread, cheapest.sendCurrency) : "Not comparable"}</strong>
+                  <small>{rankedOffers.length > 1 ? "lowest to highest provider minimum" : "Only one provider qualifies"}</small>
                 </div>
               </div>
 
@@ -604,19 +621,20 @@ export default function Home() {
                   <div>
                     <h2>Cost versus recorded speed</h2>
                   </div>
-                  <span className="chart-note">Select a point to open its quotation details</span>
+                  <span className="chart-note">One lowest-cost offer per provider</span>
                 </div>
                 <div className="scatter-wrap">
                   <div className="y-label">Total cost</div>
                   <div className="scatter" aria-label="Cost versus speed plot">
                     {[0, 25, 50, 75, 100].map((line) => (
                       <div key={line} className="grid-line" style={{ bottom: `${line}%` }}>
-                        <span>{percent((maxChartCost * line) / 100)}</span>
+                        <span>{percent(minChartCost + (chartRange * line) / 100)}</span>
                       </div>
                     ))}
+                    {minChartCost < 0 && <div className="zero-line" style={{ bottom: `${(-minChartCost / chartRange) * 100}%` }} aria-label="Zero total cost" />}
                     {rankedOffers.map((offer) => {
                       const x = SPEED_POSITION[offer.speed] ?? 50;
-                      const y = Math.min(96, 4 + (offer.totalCostPct / maxChartCost) * 90);
+                      const y = ((offer.totalCostPct - minChartCost) / chartRange) * 100;
                       return (
                         <button
                           key={offer.id}
@@ -637,7 +655,7 @@ export default function Home() {
                   <div className="x-axis">
                     <span>Under 1h</span><span>Same day</span><span>Next day</span><span>2 days</span><span>3–5 days</span><span>6+ days</span>
                   </div>
-                  <div className="x-label">Recorded transfer speed →</div>
+                  <div className="x-label">Recorded speed categories · spacing does not represent elapsed time</div>
                 </div>
               </div>
 
@@ -647,7 +665,7 @@ export default function Home() {
                     <div>
                       <h2>Provider comparison</h2>
                     </div>
-                    <span className="chart-note">Select a row to inspect</span>
+                    <span className="chart-note">Select a provider to inspect</span>
                   </div>
                   <div className="table-wrap">
                     <table>
@@ -661,7 +679,7 @@ export default function Home() {
                             className={selected?.id === offer.id ? "selected" : ""}
                             onClick={() => inspectOffer(offer.id)}
                           >
-                            <td><span className={`provider-dot ${PROVIDER_CLASS[offer.provider] ?? ""}`} />{offer.provider}</td>
+                            <td><button type="button" className="provider-button" onClick={(event) => { event.stopPropagation(); inspectOffer(offer.id); }} aria-pressed={selected?.id === offer.id}><span className={`provider-dot ${PROVIDER_CLASS[offer.provider] ?? ""}`} />{offer.provider}</button></td>
                             <td><strong>{percent(offer.totalCostPct)}</strong><small>{currency(offer.estimatedTotalCost, offer.sendCurrency)}</small></td>
                             <td>{offer.speed}</td>
                             <td>{offer.fundingMethod}<small>to {offer.receiveMethod}</small></td>
@@ -693,12 +711,14 @@ export default function Home() {
                       <div><dt>Access</dt><dd>{selected.accessPoint}</dd></div>
                       <div><dt>Collected</dt><dd>{selected.collectionDate}</dd></div>
                     </dl>
-                    <div className="cost-composition">
+                    {selected.feePct >= 0 && selected.fxMarginPct >= 0 && selected.totalCostPct > 0 && <div className="cost-composition">
                       <div className="composition-labels"><span>Fee component</span><span>FX component</span></div>
                       <div className="composition-bar">
                         <span style={{ width: `${Math.max(0, Math.min(100, selected.feePct / Math.max(selected.totalCostPct, 0.01) * 100))}%` }} />
                       </div>
                     </div>
+                    }
+                    {selected.totalCostPct < 0 && <p className="source-row">The recorded FX advantage exceeds the fee. A negative cost is relative to the source exchange-rate benchmark, not a guaranteed cash reward.</p>}
                     <p className="source-row">World Bank source row {selected.sourceRowId}. Quotation marked transparent.</p>
                   </aside>
                 )}
@@ -708,64 +728,26 @@ export default function Home() {
             <div className="empty-state">
               <span>0 qualifying offers</span>
               <h2>There is not enough comparable data for these conditions.</h2>
-              <p>Broaden the speed, funding, receiving or access filter. The dashboard will not manufacture a ranking.</p>
+              <p>Broaden the speed, funding, receiving or access filter.</p>
+              <button type="button" className="primary-button" onClick={resetConditions}>Reset conditions</button>
             </div>
           )}
         </div>
       </section>
 
-      <section className="analysis-section" aria-label="Cross-corridor findings">
-        <div className="analysis-heading">
-          <div>
-            <p className="eyebrow">Cross-corridor analysis</p>
-            <h2>Where did recorded provider costs diverge most?</h2>
-          </div>
-          <p>Fixed comparison: $200-equivalent, Internet access, delivery within 3–5 days.</p>
-        </div>
-        <div className="analysis-layout">
-          <div className="finding-list">
-            {dataset.analysis.findings.map((finding, index) => (
-              <article key={finding}>
-                <span>{String(index + 1).padStart(2, "0")}</span>
-                <p>{finding}</p>
-              </article>
-            ))}
-          </div>
-          <div className="corridor-ranking">
-            <div className="ranking-header">
-              <span>Largest provider cost spreads</span>
-              <small>percentage points</small>
-            </div>
-            {topCorridors.map((corridor) => (
-              <div className="ranking-row" key={corridor.destination}>
-                <div className="ranking-label">
-                  <strong>{corridor.destination}</strong>
-                  <small>{corridor.lowestProvider} → {corridor.highestProvider} · {corridor.primaryGapDriver}</small>
-                </div>
-                <div className="ranking-bar">
-                  <span style={{ width: `${(corridor.spreadPctPoints / maxCorridorSpread) * 100}%` }} />
-                </div>
-                <strong>{corridor.spreadPctPoints.toFixed(2)}</strong>
-              </div>
-            ))}
-          </div>
-        </div>
-        <p className="analysis-caveat">Provider minima are compared within a fixed historical scope. The fee-versus-FX classification is diagnostic and does not establish why a provider set its price.</p>
-      </section>
-
-      <section className="method-section">
+      <section className="method-section" id="methodology">
         <div className="method-heading">
           <p className="eyebrow">Methodology and limitations</p>
-          <h2>How the comparison is constructed—and where it stops.</h2>
+          <h2>Understand the comparison.</h2>
         </div>
         <div className="method-grid">
           <div>
             <span>What is compared</span>
-            <p>Provider service quotations with the same origin, destination, quarter, benchmark amount and selected delivery conditions.</p>
+            <p>Historical consumer-remittance prices for the same corridor, quarter and benchmark amount. The overview allows different funding and receiving methods; the explorer can restrict them.</p>
           </div>
           <div>
             <span>How “lowest” is chosen</span>
-            <p>The minimum World Bank total-cost percentage among offers that satisfy the active filters. Ties favour the faster recorded category.</p>
+            <p>Each provider contributes its lowest qualifying total-cost percentage. Ties favour faster service. The gap compares the highest and lowest of these provider minima; it does not measure average customer savings.</p>
           </div>
           <div>
             <span>What this cannot claim</span>
@@ -774,7 +756,7 @@ export default function Home() {
         </div>
         <div className="source-strip">
           <div><span>Source</span><strong>{dataset.metadata.title}</strong></div>
-          <div><span>Coverage used</span><strong>{dataset.metadata.recordCount} quotations · {dataset.metadata.license}</strong></div>
+          <div><span>Coverage used · {dataset.metadata.license}</span><strong>{dataset.metadata.recordCount} amount observations from {sourceCount} source quotations</strong></div>
           <div className="source-links">
             <a href={dataset.metadata.methodologyUrl} target="_blank" rel="noreferrer">Source methodology ↗</a>
             <a href="https://github.com/Yingzi-Qi/corridor-scout/tree/main/pipeline" target="_blank" rel="noreferrer">Automated pipeline ↗</a>
